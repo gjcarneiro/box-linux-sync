@@ -34,6 +34,13 @@ from noiselabs.box.configparser import WhitespaceDelimitedConfigParser
 from noiselabs.box.pms.pms import get_pms
 from noiselabs.box.utils import get_username
 
+try:
+    from gi.repository import Gtk, GLib, Gdk
+except (ImportError, RuntimeError):
+    Gtk = None
+import threading
+
+
 class BoxSetup(object):
     """
     Box setup helper.
@@ -194,7 +201,52 @@ class BoxSetup(object):
         cp.close()
 
     def wizard(self):
-        self.setup_davfs()
+        if Gtk is None:
+            return self.setup_davfs()
+        GLib.threads_init()
+
+        self.win = Gtk.Dialog(border_width=8)
+        self.win.add_button(Gtk.STOCK_CLOSE, 0)
+        self.vbox = self.win.get_content_area()
+
+        self.win.connect("delete-event", Gtk.main_quit)
+        #sw = Gtk.ScrolledWindow(visible=True)
+        #self.win.add(sw)
+        #self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=True, spacing=4)
+        #sw.add_with_viewport(self.vbox)
+        scr = Gdk.Screen.get_default()
+        self.win.set_default_size(scr.get_width()*.75, scr.get_height()*.75)
+        self.win.connect("response", Gtk.main_quit)
+
+        class GuiOut(object):
+            def __init__(self, vbox):
+                self.vbox = vbox
+
+            def _add_msg(self, msg, color):
+                def func(msg):
+                    if color:
+                        markup = ("<span color='%s'>%s</span>" % (color, GLib.markup_escape_text(msg)))
+                    else:
+                        markup = ("<span>%s</span>" % (GLib.markup_escape_text(msg),))
+                    label = Gtk.Label(label=markup, use_markup=True, visible=True, xalign=0, yalign=0.5)
+                    self.vbox.add(label)
+                GLib.idle_add(func, msg)
+
+            def debug(self, msg):
+                self._add_msg(msg, 'grey')
+
+            def info(self, msg):
+                self._add_msg(msg, None)
+
+            def warning(self, msg):
+                self._add_msg(msg, 'red')
+
+        self.out = GuiOut(self.vbox)
+        t = threading.Thread(target=self.setup_davfs)
+        t.start()
+        self.win.show_all()
+        Gtk.main()
+        t.join()
 
     def get_box_dir(self):
         try:
